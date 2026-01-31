@@ -61,8 +61,7 @@ type Part3StatRow = {
   significant_fdr_0_05?: boolean;
 };
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL?.toString()?.trim() || "";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 // ---------------- Format helpers ----------------
 function fmtInt(n: number) {
