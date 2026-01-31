@@ -17,6 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def root():
+    return {"message": "Cell Counts Dashboard API. See /api/v1/health"}
+
 @app.get("/api/v1/health")
 def health():
     return {"status": "ok"}
