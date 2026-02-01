@@ -142,7 +142,6 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const apiHealthUrl = `${API_BASE}/api/v1/health`;
   const apiFreqUrl = `${API_BASE}/api/v1/frequency?limit=${limit}`;
 
   const samples = useMemo(() => {
