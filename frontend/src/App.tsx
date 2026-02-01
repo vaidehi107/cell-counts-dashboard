@@ -187,6 +187,7 @@ export default function App() {
   const [meta, setMeta] = useState<MetaFilters | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
+  const META_URL = `${API_BASE}/api/v1/meta/filters`;
   useEffect(() => {
     let cancelled = false;
 
@@ -194,7 +195,7 @@ export default function App() {
       setMetaLoading(true);
       setMetaError(null);
       try {
-        const res = await fetch("/api/v1/meta/filters");
+        const res = await fetch(META_URL);
         if (!res.ok) throw new Error(`Meta API error: ${res.status} ${res.statusText}`);
         const data = (await res.json()) as MetaFilters;
 
@@ -222,7 +223,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [META_URL]);
 
 
 
