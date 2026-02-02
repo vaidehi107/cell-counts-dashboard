@@ -1,166 +1,213 @@
-# Database Schema & Scaling Rationale
+# Database Schema (Relational Model)
 
-## Overview
+## Model Representation
 
-This project uses a **normalized relational database** to store immune cell-count data, clinical metadata, and derived analytical results.
+The database models a simple clinical/experimental hierarchy:
 
-The schema is designed to:
-- Accurately model clinical trial concepts
-- Support analytical queries efficiently
-- Scale to large numbers of projects, subjects, and samples
-- Remain portable across database engines
+- A **project** contains many **subjects**
+- A **subject** can have one or more **treatment courses**
+- A **treatment course** can produce one or more **samples**
+- Each **sample** has measured **cell counts** for many **cell populations**
 
-SQLite is used for simplicity and reproducibility, but the schema is intentionally database-agnostic.
-
----
-
-## Conceptual Model
-
-The schema reflects the natural hierarchy of clinical data:
+### Relational logic
 
 ```
 projects → subjects → treatment_courses → samples → cell_counts ← populations
 ```
 
-Each table represents a real-world entity and avoids duplicated or denormalized data.
+**Meaning of the arrows:** “one-to-many” in the direction of the arrow.
+
+- `projects → subjects` means **one project has many subjects** (and each subject belongs to one project)
+- `subjects → treatment_courses` means **one subject can have many treatment courses**
+- `treatment_courses → samples` means **one treatment course can have many samples**
+- `samples → cell_counts` means **one sample has many cell-count rows** (one per population)
+- `populations → cell_counts` (written as `cell_counts ← populations`) means **one population appears in many cell-count rows**
+
+A more explicit way to say the same thing:
+
+- `cell_counts` is the “fact table” that links **(sample, population) → count**.
 
 ---
 
-## Tables and Rationale
+## ER diagram (ASCII)
+
+```
++-----------+      +-----------+      +------------------+      +---------+
+| projects  | 1  ─<| subjects  | 1  ─<| treatment_courses| 1  ─<| samples |
++-----------+      +-----------+      +------------------+      +---------+
+| PK id     |      | PK id     |      | PK id            |      | PK id   |
+| name      |      | subject_code|     | FK subject_id    |      | sample_code
++-----------+      | FK project_id|    | treatment        |      | FK subject_id
+                   | condition  |      | response         |      | FK treatment_course_id
+                   | age, sex   |      +------------------+      | sample_type
+                   +-----------+                                | time_from_treatment_start
+                                                                +---------+
+                                                                     1
+                                                                     |
+                                                                     | has many
+                                                                     v
+                                                            +----------------+
+                                                            |   cell_counts  |
+                                                            +----------------+
+                                                            | FK sample_id   |───> samples.PK id
+                                                            | FK population_id|──> populations.PK id
+                                                            | count          |
+                                                            +----------------+
+                                                                     ^
+                                                                     |
+                                                            +----------------+
+                                                            |  populations   |
+                                                            +----------------+
+                                                            | PK id          |
+                                                            | name           |
+                                                            +----------------+
+```
+
+---
+
+## Tables, keys, and intent
 
 ### `projects`
-Represents independent studies or cohorts.
+Represents an independent study or cohort.
 
-| Column | Type | Description |
-|------|------|------------|
-| id | INTEGER (PK) | Surrogate primary key |
-| name | TEXT | Project identifier (e.g., prj1) |
+**Primary Key (PK):**
+- `projects.id`
 
-**Why this exists**  
-Separating projects allows the same subject identifiers to appear in multiple studies without collision.
+**Columns:**
+- `id` (PK) – surrogate key
+- `name` – project identifier (e.g., `prj1`)
+
+**Rationale**
+Projects are a natural top-level unit for analysis and allow future expansion to hundreds of studies without changing downstream tables.
 
 ---
 
 ### `subjects`
-One row per biological subject within a project.
+One row per biological subject **within a project**.
 
-| Column | Type | Description |
-|------|------|------------|
-| id | INTEGER (PK) |
-| subject_code | TEXT | Subject identifier from source data |
-| project_id | INTEGER (FK) | References `projects.id` |
-| condition | TEXT | Disease/condition (e.g., melanoma) |
-| age | INTEGER | Nullable |
-| sex | TEXT | M / F |
+**Primary Key (PK):**
+- `subjects.id`
 
-**Design choice**  
-Subjects are scoped to projects, reflecting how clinical studies are conducted and avoiding global assumptions about subject identity.
+**Foreign Keys (FK):**
+- `subjects.project_id` → `projects.id`
+
+**Columns:**
+- `id` (PK)
+- `subject_code` – subject identifier from source data
+- `project_id` (FK)
+- `condition` – disease/condition (e.g., melanoma)
+- `age` (nullable)
+- `sex`
+
+**Rationale**
+Scoping subjects to projects mirrors how studies work in practice and avoids assuming subject IDs are globally unique across studies.
 
 ---
 
 ### `treatment_courses`
 Captures treatment assignment and response per subject.
 
-| Column | Type | Description |
-|------|------|------------|
-| id | INTEGER (PK) |
-| subject_id | INTEGER (FK) | References `subjects.id` |
-| treatment | TEXT | Treatment name |
-| response | TEXT | yes / no / NULL |
+**Primary Key (PK):**
+- `treatment_courses.id`
 
-**Design choice**  
-Response is associated with the treatment course, not the sample, since response is a clinical outcome rather than a measurement.
+**Foreign Keys (FK):**
+- `treatment_courses.subject_id` → `subjects.id`
+
+**Columns:**
+- `id` (PK)
+- `subject_id` (FK)
+- `treatment`
+- `response` (e.g., yes/no/NULL)
+
+**Rationale**
+Clinical response is an outcome associated with a treatment course, while samples are measurement timepoints collected during (or after) that course.
 
 ---
 
 ### `samples`
 Represents individual biological samples collected over time.
 
-| Column | Type | Description |
-|------|------|------------|
-| id | INTEGER (PK) |
-| sample_code | TEXT | Unique sample identifier |
-| subject_id | INTEGER (FK) | References `subjects.id` |
-| treatment_course_id | INTEGER (FK) | References `treatment_courses.id` |
-| sample_type | TEXT | PBMC / WB |
-| time_from_treatment_start | INTEGER | Baseline = 0 |
+**Primary Key (PK):**
+- `samples.id`
 
-**Why this matters**  
-Separating samples enables longitudinal analysis and multiple sample types per subject.
+**Foreign Keys (FK):**
+- `samples.subject_id` → `subjects.id`
+- `samples.treatment_course_id` → `treatment_courses.id`
+
+**Columns:**
+- `id` (PK)
+- `sample_code`
+- `subject_id` (FK)
+- `treatment_course_id` (FK)
+- `sample_type` (PBMC/WB)
+- `time_from_treatment_start` (baseline = 0)
+
+**Rationale**
+It supports longitudinal analysis (multiple timepoints) and multiple sample types per subject without duplicating metadata.
 
 ---
 
 ### `populations`
-Dimension table for immune cell populations.
+Reference list of immune cell population names.
 
-| Column | Type | Description |
-|------|------|------------|
-| id | INTEGER (PK) |
-| name | TEXT | Cell population name |
+**Primary Key (PK):**
+- `populations.id`
 
-**Design choice**  
-Populations are rows, not columns. This avoids schema changes when new populations are introduced.
+**Columns:**
+- `id` (PK)
+- `name` – population name
+
+**Rationale**
+This is a **dimension table**, as in a lookup/reference table that stores descriptive values (like population names) once, and other tables refer to it by ID.  
+Here, that means you can add new populations without changing the schema (no new columns needed).
 
 ---
 
 ### `cell_counts`
-Long-format fact table storing observed counts.
+Stores observed counts in long format: one row per (sample, population).
 
-| Column | Type | Description |
-|------|------|------------|
-| sample_id | INTEGER (FK) | References `samples.id` |
-| population_id | INTEGER (FK) | References `populations.id` |
-| count | INTEGER | Observed cell count |
+**Primary Key (PK):**
+- (Recommended composite PK) `cell_counts(sample_id, population_id)`
+  - This ensures each sample has at most one count per population.
 
-**Why long format**  
-Long-format storage enables:
-- Flexible aggregation
-- Efficient joins
-- Arbitrary population expansion
-- Cleaner statistical queries
+**Foreign Keys (FK):**
+- `cell_counts.sample_id` → `samples.id`
+- `cell_counts.population_id` → `populations.id`
 
----
+**Columns:**
+- `sample_id` (FK)
+- `population_id` (FK)
+- `count`
 
-## Analytical Query Strategy
-
-The schema is optimized for **read-heavy analytical workloads**.
-
-Common patterns include:
-- Per-sample frequency calculations
-- Subset filtering by condition, treatment, sample type, and timepoint
-- Grouped summaries across projects or responses
-
-These are expressed using SQL CTEs for clarity and correctness.
+**Rationale**
+Long format keeps the schema stable as populations grow from dozens to hundreds. It also makes aggregation and filtering consistent in SQL.
 
 ---
 
-## Scaling Considerations
+## Supported Query Patterns
 
-If the dataset grows to:
-- **Hundreds of projects**
-- **Thousands of subjects**
-- **Millions of samples**
+This schema is optimized for read-heavy analytics such as:
 
-The system scales by:
+- per-sample frequency calculations (population count / total counts)
+- filtering by condition, treatment, sample type, and timepoint
+- responder vs non-responder comparisons
+- subset summaries (counts by project/response/sex)
 
-- Migrating SQLite → Postgres or DuckDB
-- Adding indexes on frequently filtered columns:
-  - `subjects.condition`
-  - `treatment_courses.treatment`
-  - `samples.sample_type`
-  - `samples.time_from_treatment_start`
-- Introducing materialized views for heavy analytics
-
-No schema redesign is required.
+These queries stay straightforward because joins follow real-world relationships and there is minimal duplicated data.
 
 ---
 
-## Why This Schema Works
+## Scaling notes
 
-This schema:
-- Matches real clinical data relationships
-- Avoids denormalization and duplication
-- Supports complex analytics without schema changes
-- Remains easy to reason about and audit
+If this expands to hundreds of projects and thousands of subjects:
 
-It is intentionally designed to be **simple, explicit, and scalable**.
+- SQLite can be swapped for Postgres or DuckDB without schema changes
+- indexes can be added on common filters (e.g., `subjects.condition`, `samples.sample_type`, `treatment_courses.treatment`)
+- heavy computations can be cached as materialized views
+
+---
+
+## Other Considerations for design
+
+- **Easy to reason about:** tables correspond to real concepts (project/subject/sample), so queries read like the domain problem you’re solving.
+- **Easy to audit:** analytical results can be traced back through foreign keys to the exact subject/sample/population rows used, making it clear *which records contributed to a result* and making debugging or reviewer verification straightforward.
