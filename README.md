@@ -49,6 +49,21 @@ This repo is designed to run in a fresh Codespace using the provided `Makefile` 
 
 > You’ll run the backend and frontend in two separate terminals.
 
+### Environment Manager (micromamba)
+
+The backend uses **micromamba** to manage the Python environment.
+
+- `micromamba` is **preinstalled in GitHub Codespaces**
+- No manual installation is required in the standard Codespaces environment
+
+If for any reason `micromamba` is not available, it can be installed with:
+
+```bash
+curl -Ls https://micro.mamba.pm/install.sh | bash
+```
+
+After installation, reload the shell before running any `make` commands.
+
 ### 0) Quick reference (Make targets)
 
 From the repo root:
